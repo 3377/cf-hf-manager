@@ -4,14 +4,9 @@ compatibility_date = "2023-04-20"
 # Pages配置
 pages_build_output_dir = "public"
 
-# 开发模式
+# 开发模式 - 移除了不支持的routes配置
 [dev]
 port = 8788
-
-# 路由配置，使用数组格式
-routes = [
-  { pattern = "/api/*", script = "functions/api" }
-]
 
 # 环境配置
 # 注意: 以下环境变量必须在Cloudflare Pages控制台中设置:
@@ -37,22 +32,13 @@ kv_namespaces = [
 [env.production.vars]
 APP_VERSION = "1.0.0"
 
-# 测试环境配置
-[env.staging]
-# 测试环境特定配置
+# 预览环境配置 (原staging环境，已重命名为符合Pages标准)
+[env.preview]
+# 预览环境特定配置
 kv_namespaces = [
   { binding = "SESSIONS", id = "your-kv-id-for-sessions", preview_id = "your-preview-kv-id-for-sessions" }
 ]
 
-[env.staging.vars]
+[env.preview.vars]
 APP_VERSION = "1.0.0"
 
-# 开发环境配置
-[env.development]
-# 开发环境特定配置
-kv_namespaces = [
-  { binding = "SESSIONS", id = "your-kv-id-for-sessions", preview_id = "your-preview-kv-id-for-sessions" }
-]
-
-[env.development.vars]
-APP_VERSION = "1.0.0" 
