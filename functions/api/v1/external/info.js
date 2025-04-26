@@ -1,4 +1,4 @@
-import { getConfig } from '../../../helpers';
+import { getConfig } from '../../config';
 
 export async function onRequestGet(context) {
   try {

@@ -10,7 +10,6 @@ HF Space Manager 是一个用于管理 Hugging Face Spaces 的管理面板，基
 - 用户认证和授权
 - 响应式设计，支持桌面和移动设备
 - 多用户多令牌支持
-- 外部API访问接口
 
 ## 项目结构
 
@@ -19,7 +18,6 @@ hf-space-manager-pages/
 ├── functions/             # Cloudflare Pages Functions
 │   ├── api/
 │   │   ├── config.js      # 配置信息 API
-│   │   ├── helpers.js     # 共享辅助函数
 │   │   ├── proxy/
 │   │   │   ├── spaces.js  # Spaces 列表获取
 │   │   │   ├── restart.js # 重启 Space
@@ -34,14 +32,6 @@ hf-space-manager-pages/
 │   │       ├── verifyToken.js # 验证令牌API
 │   │       ├── info.js    # 系统信息API
 │   │       ├── action.js  # 执行操作API
-│   │       ├── external/  # 外部API接口
-│   │       │   ├── _middleware.js # 外部API中间件
-│   │       │   ├── info.js # 外部API信息
-│   │       │   ├── spaces.js # 获取空间列表
-│   │       │   ├── spaces/[username].js # 获取特定用户的空间列表
-│   │       │   ├── spaces/[id].js # 获取特定空间详情
-│   │       │   ├── action/[spaceId]/restart.js # 重启空间
-│   │       │   ├── action/[spaceId]/rebuild.js # 重建空间
 │   │       ├── _middleware.js # API v1中间件
 │   └── _middleware.js     # 全局中间件
 ├── public/                # 静态前端文件
@@ -75,13 +65,11 @@ hf-space-manager-pages/
 | `HF_USER` | HuggingFace用户和API Token映射，格式为`username:token`，多个用户用逗号分隔 | 与HF_API_TOKEN二选一 | `user1:token1,user2:token2` |
 | `HF_API_TOKEN` | 全局Hugging Face API令牌，当HF_USER未配置或未提供特定用户令牌时使用 | 与HF_USER二选一 | `hf_xxxxxxxxxxxxxxxxxxxx` |
 | `HF_USERNAMES` | 以逗号分隔的用户名列表，用于过滤Spaces（如果设置了HF_USER则可以省略） | 否 | `user1,user2,user3` |
-| `API_KEY` | 外部API访问密钥，用于第三方应用通过API访问和管理Spaces | 否 | `your-api-key` |
 
 > **重要提示**: 
 > - 环境变量需要为生产和预览环境分别设置。通常建议至少为生产环境设置这些变量。
 > - 如果你管理多个用户的Spaces，推荐使用HF_USER设置每个用户对应的令牌，这样系统会自动使用正确的令牌操作相应用户的Spaces。
 > - 如果只管理单个用户的Spaces，可以只设置HF_API_TOKEN。
-> - 如果要允许外部应用访问API，请设置API_KEY并保持安全。
 
 ## 多用户令牌映射
 
@@ -109,76 +97,6 @@ HF_API_TOKEN=hf_fallback_token
 ```
 
 在这个例子中，user1的操作会使用其专用令牌，而user2的操作会使用全局令牌。
-
-## 外部API使用
-
-本项目提供了一组外部API，允许第三方应用通过API调用访问和管理Spaces。这些API使用Bearer令牌认证方式，需要在请求头中包含`Authorization: Bearer <API_KEY>`进行认证。
-
-### API基础信息
-
-- **基础URL**：`https://<your-domain>/api/v1/external`
-- **认证方式**：在请求头中设置 `Authorization: Bearer <API_KEY>`
-- **内容类型**：`Content-Type: application/json`
-
-### API端点列表
-
-#### 1. 获取系统信息
-
-- **URL**：`/info`
-- **方法**：`GET`
-- **描述**：获取系统信息和可用API端点列表
-
-#### 2. 获取所有Spaces
-
-- **URL**：`/spaces`
-- **方法**：`GET`
-- **描述**：获取所有可用的Spaces列表
-
-#### 3. 获取特定用户的Spaces
-
-- **URL**：`/spaces/:username`
-- **方法**：`GET`
-- **描述**：获取特定用户的Spaces列表
-
-#### 4. 获取特定Space详情
-
-- **URL**：`/spaces/:id`
-- **方法**：`GET`
-- **描述**：获取特定Space的详细信息
-
-#### 5. 重启Space
-
-- **URL**：`/action/:spaceId/restart`
-- **方法**：`POST`
-- **描述**：重启指定的Space
-
-#### 6. 重建Space
-
-- **URL**：`/action/:spaceId/rebuild`
-- **方法**：`POST`
-- **描述**：重建指定的Space
-
-### 使用示例
-
-使用curl调用API示例：
-
-```bash
-# 获取系统信息
-curl -X GET "https://your-domain.pages.dev/api/v1/external/info" \
-  -H "Authorization: Bearer your-api-key"
-
-# 获取所有Spaces
-curl -X GET "https://your-domain.pages.dev/api/v1/external/spaces" \
-  -H "Authorization: Bearer your-api-key"
-
-# 获取特定用户的Spaces
-curl -X GET "https://your-domain.pages.dev/api/v1/external/spaces/username" \
-  -H "Authorization: Bearer your-api-key"
-
-# 重启Space
-curl -X POST "https://your-domain.pages.dev/api/v1/external/action/username/space-name/restart" \
-  -H "Authorization: Bearer your-api-key"
-```
 
 ## 详细部署步骤
 
@@ -280,10 +198,9 @@ wrangler pages publish public
    - 检查 API 令牌是否有足够的权限
    - 如果使用 `HF_USER`，检查格式是否正确（必须是 `username:token` 格式）
 
-3. **外部API访问失败**
-   - 确认 `API_KEY` 环境变量已正确设置
-   - 验证请求头是否包含正确的 `Authorization: Bearer <API_KEY>` 格式
-   - 检查请求的URL路径是否正确
+3. **无法操作特定用户的Space**
+   - 检查该用户是否在 `HF_USER` 中配置了正确的令牌
+   - 检查全局令牌 `HF_API_TOKEN` 是否有权限操作该用户的 Spaces
 
 4. **实时监控不工作**
    - 检查浏览器控制台是否有 SSE 连接错误
@@ -324,26 +241,6 @@ wrangler pages publish public
 
 #### POST /api/proxy/update-subscriptions
 更新监控订阅
-
-### 外部 API
-
-#### GET /api/v1/external/info
-获取系统信息和可用API端点列表
-
-#### GET /api/v1/external/spaces
-获取所有可用的Spaces列表
-
-#### GET /api/v1/external/spaces/:username
-获取特定用户的Spaces列表
-
-#### GET /api/v1/external/spaces/:id
-获取特定Space的详细信息
-
-#### POST /api/v1/external/action/:spaceId/restart
-重启指定的Space
-
-#### POST /api/v1/external/action/:spaceId/rebuild
-重建指定的Space
 
 ### 其他 API
 
