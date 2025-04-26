@@ -1,6 +1,9 @@
 name = "hf-space-manager"
 compatibility_date = "2023-04-20"
 
+# Pages配置
+pages_build_output_dir = "public"
+
 # KV 命名空间配置
 # 请按照以下步骤设置KV命名空间:
 # 1. 使用命令 `wrangler kv:namespace create SESSIONS` 创建命名空间

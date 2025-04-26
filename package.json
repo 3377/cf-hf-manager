@@ -1,0 +1,22 @@
+{
+    "name": "hf-space-manager",
+    "version": "1.0.0",
+    "description": "HF Space Manager - 一个用于管理Hugging Face Spaces的管理面板",
+    "main": "index.js",
+    "scripts": {
+        "dev": "wrangler pages dev --compatibility-date=2023-04-20",
+        "build": "echo 'No build step needed for static files' && exit 0"
+    },
+    "keywords": [
+        "huggingface",
+        "spaces",
+        "manager",
+        "cloudflare",
+        "pages"
+    ],
+    "author": "",
+    "license": "MIT",
+    "devDependencies": {
+        "wrangler": "^3.0.0"
+    }
+}
