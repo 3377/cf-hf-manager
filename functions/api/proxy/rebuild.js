@@ -157,41 +157,79 @@ export async function onRequest(context) {
     }
     
     // 调用Hugging Face API重建Space
-    console.log(`开始重建Space: ${spaceId}，使用API: https://huggingface.co/api/spaces/${spaceId}/restart?factory=true`);
+    console.log(`开始重建Space: ${spaceId}，尝试多种可能的API端点`);
     
-    // 修改: 使用正确的API端点，带有factory=true参数，明确指定这是一个factory rebuild
-    const response = await fetch(`https://huggingface.co/api/spaces/${spaceId}/restart?factory=true`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiToken}`,
-        'Content-Type': 'application/json'
-      },
-      // 确保请求体是有效的JSON，即使是空对象
-      body: JSON.stringify({}),
-      // 设置超时，防止长时间等待
-      signal: AbortSignal.timeout(30000) // 30秒超时
-    });
+    // 按优先级尝试多个端点，直到成功
+    const apiEndpoints = [
+      { url: `https://huggingface.co/api/spaces/${spaceId}/factory-reboot`, desc: "factory-reboot" },
+      { url: `https://huggingface.co/api/spaces/${spaceId}/restart?factory=true`, desc: "restart?factory=true" },
+      { url: `https://huggingface.co/api/spaces/${spaceId}/build`, desc: "build" }
+    ];
     
-    // 记录响应状态码
-    console.log(`Space重建请求响应状态: ${response.status}`);
+    let lastError = null;
+    let successResponse = null;
     
-    if (!response.ok) {
-      const error = await response.text();
-      console.error(`重建Space失败 (${spaceId}): 状态码 ${response.status}, 响应: ${error}`);
-      throw new Error(`重建Space失败: ${response.status} - ${error}`);
+    // 依次尝试每个API端点
+    for (const endpoint of apiEndpoints) {
+      try {
+        console.log(`尝试使用API端点: ${endpoint.desc}`);
+        
+        const response = await fetch(endpoint.url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiToken}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'HF-Space-Manager/2.0'
+          },
+          body: JSON.stringify({}),
+          signal: AbortSignal.timeout(30000) // 30秒超时
+        });
+        
+        console.log(`${endpoint.desc} 响应状态: ${response.status}`);
+        
+        if (response.ok) {
+          // 找到成功的端点
+          let result;
+          try {
+            result = await response.json();
+          } catch (jsonError) {
+            console.warn(`无法解析JSON响应: ${jsonError.message}`);
+            result = { status: 'success', message: '操作成功，但服务器未返回详细信息' };
+          }
+          
+          console.log(`使用 ${endpoint.desc} 重建请求成功`);
+          successResponse = {
+            success: true,
+            message: `Space重建请求已通过 ${endpoint.desc} 发送`,
+            data: result
+          };
+          break; // 成功后跳出循环
+        } else {
+          const error = await response.text();
+          console.error(`${endpoint.desc} 失败: 状态码 ${response.status}, 响应: ${error}`);
+          lastError = new Error(`${endpoint.desc} 失败: ${response.status} - ${error}`);
+        }
+      } catch (fetchError) {
+        console.error(`${endpoint.desc} 请求错误:`, fetchError);
+        lastError = fetchError;
+      }
     }
     
-    const result = await response.json();
-    console.log(`Space重建请求成功发送 (${spaceId}), 响应:`, result);
+    // 如果有成功的响应，返回它
+    if (successResponse) {
+      return new Response(JSON.stringify(successResponse), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
     
-    return new Response(JSON.stringify({
-      success: true,
-      message: 'Space重建请求已发送',
-      data: result
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
+    // 如果所有尝试都失败，抛出最后一个错误
+    if (lastError) {
+      throw lastError;
+    } else {
+      throw new Error('所有API端点均请求失败');
+    }
     
   } catch (error) {
     // 增强错误日志
@@ -207,10 +245,26 @@ export async function onRequest(context) {
       });
     }
     
+    // 创建更友好的错误消息
+    let statusCode = 500;
+    let errorMessage = error.message;
+    
+    // 处理特定API错误
+    if (errorMessage.includes('405')) {
+      statusCode = 405;
+      errorMessage = 'HuggingFace API不允许此操作方法，可能需要特定权限或API已变更';
+    } else if (errorMessage.includes('401') || errorMessage.includes('403')) {
+      statusCode = 403;
+      errorMessage = '权限不足或Token无效，无法对此Space执行操作';
+    } else if (errorMessage.includes('404')) {
+      statusCode = 404;
+      errorMessage = '找不到指定的Space，请确认ID是否正确';
+    }
+    
     return new Response(JSON.stringify({
-      error: '重建Space失败: ' + error.message
+      error: '重建Space失败: ' + errorMessage
     }), {
-      status: 500,
+      status: statusCode,
       headers: { 'Content-Type': 'application/json' }
     });
   }

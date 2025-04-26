@@ -157,40 +157,58 @@ export async function onRequest(context) {
     }
     
     // 调用Hugging Face API重启Space
-    console.log(`开始重启Space: ${spaceId}，使用API: https://huggingface.co/api/spaces/${spaceId}/restart`);
+    console.log(`开始重启Space: ${spaceId}，使用标准API: https://huggingface.co/api/spaces/${spaceId}/restart`);
     
-    const response = await fetch(`https://huggingface.co/api/spaces/${spaceId}/restart`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiToken}`,
-        'Content-Type': 'application/json'
-      },
-      // 添加空的请求体，确保请求格式正确
-      body: JSON.stringify({}),
-      // 设置超时，防止长时间等待
-      signal: AbortSignal.timeout(30000) // 30秒超时
-    });
-    
-    // 记录响应状态码
-    console.log(`Space重启请求响应状态: ${response.status}`);
-    
-    if (!response.ok) {
-      const error = await response.text();
-      console.error(`重启Space失败 (${spaceId}): 状态码 ${response.status}, 响应: ${error}`);
-      throw new Error(`重启Space失败: ${response.status} - ${error}`);
+    try {
+      // 使用内置的 fetch 方法，添加必要的头部
+      const response = await fetch(`https://huggingface.co/api/spaces/${spaceId}/restart`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiToken}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'HF-Space-Manager/2.0'
+        },
+        // 确保请求体有效，即使是空对象
+        body: JSON.stringify({}),
+        // 设置超时保护
+        signal: AbortSignal.timeout(30000) // 30秒超时
+      });
+      
+      // 记录响应状态码以进行调试
+      console.log(`Space重启请求响应状态: ${response.status}`);
+      
+      // 如果响应不成功，抛出错误
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`重启Space失败 (${spaceId}): 状态码 ${response.status}, 响应: ${error}`);
+        throw new Error(`重启Space失败: ${response.status} - ${error}`);
+      }
+      
+      // 解析结果
+      let result;
+      try {
+        result = await response.json();
+      } catch (jsonError) {
+        console.warn(`无法解析JSON响应: ${jsonError.message}, 原始响应: ${await response.text()}`);
+        // 如果响应成功但非JSON，则创建默认响应
+        result = { status: 'success', message: '操作成功，但服务器未返回详细信息' };
+      }
+      
+      console.log(`Space重启请求成功发送 (${spaceId}), 响应:`, result);
+      
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'Space重启请求已发送',
+        data: result
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } catch (fetchError) {
+      console.error(`重启Space API请求失败 (${spaceId}):`, fetchError);
+      throw fetchError; // 重新抛出，让外层捕获
     }
-    
-    const result = await response.json();
-    console.log(`Space重启请求成功发送 (${spaceId}), 响应:`, result);
-    
-    return new Response(JSON.stringify({
-      success: true,
-      message: 'Space重启请求已发送',
-      data: result
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
     
   } catch (error) {
     // 增强错误日志
@@ -206,10 +224,26 @@ export async function onRequest(context) {
       });
     }
     
+    // 创建更友好的错误消息
+    let statusCode = 500;
+    let errorMessage = error.message;
+    
+    // 处理特定API错误
+    if (errorMessage.includes('405')) {
+      statusCode = 405;
+      errorMessage = 'HuggingFace API不允许此操作方法，可能需要特定权限或API已变更';
+    } else if (errorMessage.includes('401') || errorMessage.includes('403')) {
+      statusCode = 403;
+      errorMessage = '权限不足或Token无效，无法对此Space执行操作';
+    } else if (errorMessage.includes('404')) {
+      statusCode = 404;
+      errorMessage = '找不到指定的Space，请确认ID是否正确';
+    }
+    
     return new Response(JSON.stringify({
-      error: '重启Space失败: ' + error.message
+      error: '重启Space失败: ' + errorMessage
     }), {
-      status: 500,
+      status: statusCode,
       headers: { 'Content-Type': 'application/json' }
     });
   }
