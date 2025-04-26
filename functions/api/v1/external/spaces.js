@@ -1,5 +1,4 @@
-import { getConfig } from '../../config';
-import { getSpaces } from '../../helpers';
+import { getConfig, getSpaces } from '../../../helpers';
 
 export async function onRequestGet(context) {
   try {
