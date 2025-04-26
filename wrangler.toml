@@ -27,8 +27,10 @@ script = "functions/api"
 # 注意: 以下环境变量必须在Cloudflare Pages控制台中设置:
 # - HF_USERNAME: 管理面板登录用户名
 # - HF_PASSWORD: 管理面板登录密码
-# - HF_API_TOKEN: Hugging Face API令牌
-# - HF_USERNAMES: (可选) 以逗号分隔的用户名列表，用于过滤Spaces
+# - HF_USER: HuggingFace用户和API Token映射，格式为"username:token"，多个用户用逗号分隔，例如"user1:token1,user2:token2"
+# - HF_API_TOKEN: (可选) 全局Hugging Face API令牌，当HF_USER未提供特定用户令牌时使用
+# - HF_USERNAMES: (可选) 以逗号分隔的用户名列表，用于过滤Spaces，若设置了HF_USER则可以省略
+# - API_KEY: (可选) 外部API访问密钥，用于第三方应用通过API调用访问和管理Spaces
 
 [env.production]
 # 生产环境特定配置
