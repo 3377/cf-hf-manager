@@ -5,8 +5,17 @@ let metricsConnectionId = null;
 let activeMetricsSubscriptions = [];
 const API_BASE_URL = '';
 
+// 调试标志 - 设置为true以启用更详细的日志记录
+const DEBUG = true;
+
 // 页面加载时执行
 document.addEventListener('DOMContentLoaded', () => {
+  // 输出调试信息
+  if (DEBUG) {
+    console.log('应用程序启动，API基础URL:', API_BASE_URL);
+    document.getElementById('stats-container').innerHTML = '<div class="loading-message">正在初始化应用...</div>';
+  }
+
   // 初始化主题设置
   initTheme();
 
@@ -17,21 +26,119 @@ document.addEventListener('DOMContentLoaded', () => {
   initLoginModal();
   initConfirmModal();
 
-  // 加载配置
-  loadConfig();
-  
-  // 检查登录状态
-  checkLoginStatus().then(loggedIn => {
-    if (loggedIn) {
-      console.log('已登录，可操作');
+  // 测试API连接
+  testApiConnection().then(result => {
+    if (result.success) {
+      // 如果API连接测试成功，继续加载应用
+      // 加载配置
+      loadConfig();
+      
+      // 检查登录状态
+      checkLoginStatus().then(loggedIn => {
+        if (loggedIn) {
+          console.log('已登录，可操作');
+        } else {
+          console.log('未登录，仅查看模式');
+        }
+      });
+
+      // 加载服务器列表
+      loadSpaces();
     } else {
-      console.log('未登录，仅查看模式');
+      // 如果API连接测试失败，显示错误信息
+      document.getElementById('stats-container').innerHTML = 
+        `<div class="loading-message error">
+          <h3>API连接失败</h3>
+          <p>${result.message}</p>
+          <div class="api-debug-info">
+            <h4>调试信息</h4>
+            <pre>${JSON.stringify(result.details || {}, null, 2)}</pre>
+            <button onclick="testApiConnection().then(res => { 
+              document.getElementById('stats-container').innerHTML = 
+                '<pre>' + JSON.stringify(res, null, 2) + '</pre>'; 
+            })">重新测试API</button>
+            <button onclick="loadSpaces()">尝试加载Spaces</button>
+          </div>
+        </div>`;
     }
   });
-
-  // 加载服务器列表
-  loadSpaces();
 });
+
+// 测试API连接
+async function testApiConnection() {
+  if (DEBUG) console.log('测试API连接...');
+  
+  try {
+    // 首先测试测试配置端点
+    const testConfigResult = await fetch(`${API_BASE_URL}/api/test-config`)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`测试配置端点返回状态码: ${response.status}`);
+        }
+        return response.json();
+      })
+      .catch(error => {
+        if (DEBUG) console.error('测试配置端点错误:', error);
+        return { error: `测试配置端点错误: ${error.message}` };
+      });
+    
+    if (testConfigResult.error) {
+      // 配置测试失败，但我们可以尝试直接测试spaces端点
+      if (DEBUG) console.log('测试配置端点失败，尝试直接测试spaces端点');
+      
+      return await fetch(`${API_BASE_URL}/api/proxy/spaces`)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`Spaces API返回状态码: ${response.status}`);
+          }
+          // 尝试读取响应体，看看是否有有效数据
+          return response.text().then(text => {
+            try {
+              const data = JSON.parse(text);
+              return { 
+                success: true, 
+                message: `API连接成功，获取到${data.length || 0}个spaces`, 
+                details: { 
+                  responseLength: text.length,
+                  dataType: typeof data,
+                  isArray: Array.isArray(data),
+                  sampleData: Array.isArray(data) && data.length > 0 ? data[0] : null
+                }
+              };
+            } catch (e) {
+              // 响应不是有效的JSON
+              return { 
+                success: false, 
+                message: '无法解析API响应为JSON', 
+                details: { responseText: text.substring(0, 500) + (text.length > 500 ? '...' : '') }
+              };
+            }
+          });
+        })
+        .catch(error => {
+          return { 
+            success: false, 
+            message: `无法连接到Spaces API: ${error.message}`,
+            details: { error: error.toString() }
+          };
+        });
+    }
+    
+    // 配置测试成功
+    return { 
+      success: true, 
+      message: 'API配置测试成功', 
+      details: testConfigResult 
+    };
+  } catch (error) {
+    if (DEBUG) console.error('API连接测试失败:', error);
+    return { 
+      success: false, 
+      message: `API连接测试失败: ${error.message}`,
+      details: { error: error.toString() }
+    };
+  }
+}
 
 // 初始化主题设置
 function initTheme() {
@@ -338,25 +445,63 @@ async function loadSpaces() {
     const statsContainer = document.getElementById('stats-container');
     statsContainer.innerHTML = '<div class="loading-message">加载 Spaces 数据...</div>';
     
+    if (DEBUG) console.log('开始请求Spaces列表:', `${API_BASE_URL}/api/proxy/spaces`);
+    
     const response = await fetch(`${API_BASE_URL}/api/proxy/spaces`);
+    
+    if (DEBUG) console.log('Spaces API响应状态:', response.status, response.statusText);
+    
     if (!response.ok) {
       throw new Error(`加载 Spaces 失败: ${response.status}`);
     }
     
-    allSpaces = await response.json();
+    // 获取响应文本以便调试
+    const responseText = await response.text();
     
-    // 更新统计数据
-    updateSummary();
+    if (DEBUG) console.log('Spaces API响应长度:', responseText.length, '字节');
     
-    // 更新 UI
-    updateSpacesUI();
-    
-    // 初始化实时监控
-    connectToMetrics();
+    // 尝试解析响应
+    try {
+      allSpaces = JSON.parse(responseText);
+      
+      if (DEBUG) {
+        console.log(`解析成功，获取到 ${allSpaces.length} 个Spaces`);
+        if (allSpaces.length > 0) {
+          console.log('第一个Space样本:', allSpaces[0]);
+        }
+      }
+      
+      // 更新统计数据
+      updateSummary();
+      
+      // 更新 UI
+      updateSpacesUI();
+      
+      // 初始化实时监控
+      connectToMetrics();
+    } catch (parseError) {
+      console.error('解析Spaces响应失败:', parseError);
+      statsContainer.innerHTML = `
+        <div class="loading-message error">
+          <p>解析Spaces数据失败: ${parseError.message}</p>
+          <div class="api-debug-info">
+            <h4>响应内容预览 (前500字符)</h4>
+            <pre>${responseText.substring(0, 500)}${responseText.length > 500 ? '...' : ''}</pre>
+          </div>
+        </div>`;
+    }
   } catch (error) {
     console.error('加载 Spaces 失败:', error);
     const statsContainer = document.getElementById('stats-container');
-    statsContainer.innerHTML = `<div class="loading-message">加载失败: ${error.message}</div>`;
+    statsContainer.innerHTML = `
+      <div class="loading-message error">
+        <p>加载失败: ${error.message}</p>
+        <button onclick="loadSpaces()">重试</button>
+        <button onclick="testApiConnection().then(res => { 
+          document.getElementById('stats-container').innerHTML = 
+            '<pre>' + JSON.stringify(res, null, 2) + '</pre>'; 
+        })">测试API连接</button>
+      </div>`;
   }
 }
 

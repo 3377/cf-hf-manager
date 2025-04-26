@@ -586,3 +586,79 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+/* 调试信息和错误样式 */
+.loading-message.error {
+    color: #e53935;
+    background-color: rgba(229, 57, 53, 0.1);
+    border: 1px solid #e53935;
+    padding: 20px;
+    border-radius: 8px;
+    margin: 20px auto;
+    max-width: 800px;
+    text-align: left;
+}
+
+.loading-message.error h3 {
+    margin-top: 0;
+}
+
+.loading-message.error button {
+    background-color: #4285f4;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    margin-right: 10px;
+    margin-top: 10px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.loading-message.error button:hover {
+    background-color: #356ac3;
+}
+
+.api-debug-info {
+    margin-top: 20px;
+    padding: 15px;
+    background-color: rgba(0, 0, 0, 0.05);
+    border-radius: 4px;
+    overflow: auto;
+}
+
+.api-debug-info h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    color: #333;
+}
+
+.api-debug-info pre {
+    white-space: pre-wrap;
+    font-family: monospace;
+    font-size: 12px;
+    background-color: rgba(0, 0, 0, 0.1);
+    padding: 10px;
+    border-radius: 4px;
+    overflow: auto;
+    max-height: 300px;
+}
+
+/* 深色模式的调试样式 */
+[data-theme="dark"] .loading-message.error {
+    background-color: rgba(229, 57, 53, 0.2);
+    border-color: #f44336;
+}
+
+[data-theme="dark"] .api-debug-info {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .api-debug-info h4 {
+    color: #e0e0e0;
+}
+
+[data-theme="dark"] .api-debug-info pre {
+    background-color: rgba(0, 0, 0, 0.3);
+    color: #e0e0e0;
+}

@@ -1,0 +1,85 @@
+{
+    "version": 1,
+    "include": [
+        "/*"
+    ],
+    "exclude": [],
+    "routes": [
+        {
+            "pattern": "/api/proxy/spaces",
+            "function": "api/proxy/spaces"
+        },
+        {
+            "pattern": "/api/proxy/restart/:spaceId",
+            "function": "api/proxy/restart"
+        },
+        {
+            "pattern": "/api/proxy/rebuild/:spaceId",
+            "function": "api/proxy/rebuild"
+        },
+        {
+            "pattern": "/api/proxy/metrics",
+            "function": "api/proxy/metrics"
+        },
+        {
+            "pattern": "/api/proxy/live-metrics-stream",
+            "function": "api/proxy/live-metrics-stream"
+        },
+        {
+            "pattern": "/api/proxy/update-subscriptions",
+            "function": "api/proxy/update-subscriptions"
+        },
+        {
+            "pattern": "/api/v1/login",
+            "function": "api/v1/login"
+        },
+        {
+            "pattern": "/api/v1/logout",
+            "function": "api/v1/logout"
+        },
+        {
+            "pattern": "/api/v1/verify",
+            "function": "api/v1/verify"
+        },
+        {
+            "pattern": "/api/v1/info",
+            "function": "api/v1/info"
+        },
+        {
+            "pattern": "/api/v1/action",
+            "function": "api/v1/action"
+        },
+        {
+            "pattern": "/api/config",
+            "function": "api/config"
+        },
+        {
+            "pattern": "/api/test-config",
+            "function": "api/test-config"
+        },
+        {
+            "pattern": "/api/v1/external/spaces",
+            "function": "api/v1/external/spaces"
+        },
+        {
+            "pattern": "/api/v1/external/spaces/:id",
+            "function": "api/v1/external/spaces/[id]"
+        },
+        {
+            "pattern": "/api/v1/external/spaces/:username",
+            "function": "api/v1/external/spaces/[username]"
+        },
+        {
+            "pattern": "/api/v1/external/action/:spaceId/restart",
+            "function": "api/v1/external/action/[spaceId]/restart"
+        },
+        {
+            "pattern": "/api/v1/external/action/:spaceId/rebuild",
+            "function": "api/v1/external/action/[spaceId]/rebuild"
+        },
+        {
+            "pattern": "/api/v1/external/info",
+            "function": "api/v1/external/info"
+        }
+    ]
+}
