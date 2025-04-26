@@ -18,29 +18,15 @@ export async function onRequest(context) {
     const instances = instancesParam.split(',').filter(id => id.trim() !== '');
     console.log(`收到监控请求，实例列表: ${instances.join(', ')}`);
     
-    // 从环境变量获取用户-令牌映射
-    const userTokenMapping = {};
-    const hfUserConfig = context.env.HF_USER || '';
+    // 从请求头中获取令牌
+    const authHeader = context.request.headers.get('Authorization') || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : '';
     
-    if (hfUserConfig) {
-      hfUserConfig.split(',').forEach(pair => {
-        const parts = pair.split(':').map(part => part.trim());
-        const username = parts[0];
-        const token = parts[1] || '';
-        if (username && token) {
-          userTokenMapping[username] = token;
-        }
-      });
-    }
-    
-    // 全局API令牌（当没有特定用户令牌时使用）
-    const globalApiToken = context.env.HF_API_TOKEN;
-    
-    if (Object.keys(userTokenMapping).length === 0 && !globalApiToken) {
+    if (!token) {
       return new Response(JSON.stringify({
-        error: 'API令牌未配置，无法获取监控数据'
+        error: '未提供授权令牌，无法获取监控数据'
       }), {
-        status: 500,
+        status: 401,
         headers: { 'Content-Type': 'application/json' }
       });
     }
@@ -67,22 +53,20 @@ export async function onRequest(context) {
         // 遍历所有实例并获取其指标
         for (const spaceId of instances) {
           try {
-            // 确定使用哪个令牌
-            let token = globalApiToken;
+            // 从space ID中提取用户名和空间名
             let username = '';
+            let spaceName = '';
             
-            // 从space ID中提取用户名
             if (spaceId.includes('/')) {
-              username = spaceId.split('/')[0];
-              // 如果有该用户的专用令牌，则使用它
-              if (userTokenMapping[username]) {
-                token = userTokenMapping[username];
-              }
+              [username, spaceName] = spaceId.split('/');
+            } else {
+              console.error(`无效的Space ID格式: ${spaceId}`);
+              continue;
             }
             
             // 构建请求URL
             // 使用v1 API获取实时指标
-            const apiUrl = `https://api.hf.space/v1/${username}/${spaceId.split('/')[1]}/metrics`;
+            const apiUrl = `https://api.hf.space/v1/${username}/${spaceName}/metrics`;
             console.log(`获取指标: ${apiUrl.replace(username, '***')}`);
             
             const response = await fetch(apiUrl, {

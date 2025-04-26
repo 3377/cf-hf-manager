@@ -819,6 +819,13 @@ async function rebuildSpace(space) {
 
 // 连接到监控指标
 function connectToMetrics() {
+  // 获取认证令牌
+  const token = localStorage.getItem('token');
+  if (!token) {
+    console.log('未登录，无法获取实时监控数据');
+    return;
+  }
+  
   // 生成随机客户端ID
   metricsConnectionId = Math.random().toString(36).substring(2, 15);
   
@@ -832,32 +839,99 @@ function connectToMetrics() {
   }
   
   // 使用SSE建立监控连接
-  const url = new URL(`${API_BASE_URL}/api/proxy/live-metrics-stream`);
-  url.searchParams.append('instances', activeMetricsSubscriptions.join(','));
-  
-  sseConnection = new EventSource(url);
-  
-  // 监听监控数据事件
-  sseConnection.addEventListener('metric', function(event) {
-    try {
-      const data = JSON.parse(event.data);
-      updateMetricsUI(data.repoId, data.metrics);
-    } catch (error) {
-      console.error('解析监控数据错误:', error);
+  try {
+    // 由于EventSource不支持自定义头部，我们创建自定义的URL参数来传递令牌
+    // 首先关闭任何现有连接
+    if (sseConnection) {
+      sseConnection.close();
     }
-  });
-  
-  // 错误处理
-  sseConnection.addEventListener('error', function(event) {
-    console.error('SSE连接错误:', event);
-    // 尝试重连
-    setTimeout(() => {
-      if (sseConnection) {
-        sseConnection.close();
-        connectToMetrics();
+    
+    // 构建带认证令牌的URL
+    const url = new URL(`${API_BASE_URL}/api/proxy/live-metrics-stream`);
+    url.searchParams.append('instances', activeMetricsSubscriptions.join(','));
+    
+    // 创建新的EventSource连接和自定义请求对象
+    const request = new Request(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`
       }
-    }, 5000);
-  });
+    });
+    
+    // 使用fetch获取响应流
+    fetch(request).then(response => {
+      if (!response.ok) {
+        throw new Error(`SSE连接失败: ${response.status}`);
+      }
+      
+      // 创建新的ReadableStream和TextDecoder来处理SSE
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      
+      function processStream() {
+        reader.read().then(({ done, value }) => {
+          if (done) {
+            console.log('SSE流已关闭');
+            // 尝试重连
+            setTimeout(() => connectToMetrics(), 5000);
+            return;
+          }
+          
+          // 解码数据并添加到缓冲区
+          buffer += decoder.decode(value, { stream: true });
+          
+          // 处理缓冲区中的所有完整事件
+          const events = buffer.split('\n\n');
+          buffer = events.pop() || ''; // 最后一个元素可能是不完整的事件
+          
+          // 处理每个完整的事件
+          events.forEach(eventStr => {
+            if (!eventStr.trim()) return; // 跳过空事件
+            
+            const eventLines = eventStr.split('\n');
+            let eventType = 'message';
+            let eventData = '';
+            
+            // 解析事件类型和数据
+            eventLines.forEach(line => {
+              if (line.startsWith('event:')) {
+                eventType = line.substring(6).trim();
+              } else if (line.startsWith('data:')) {
+                eventData = line.substring(5).trim();
+              }
+            });
+            
+            // 处理事件
+            if (eventType === 'metric' && eventData) {
+              try {
+                const data = JSON.parse(eventData);
+                updateMetricsUI(data.repoId, data.metrics);
+              } catch (error) {
+                console.error('解析监控数据错误:', error);
+              }
+            }
+          });
+          
+          // 继续处理流
+          processStream();
+        }).catch(error => {
+          console.error('读取SSE流错误:', error);
+          // 尝试重连
+          setTimeout(() => connectToMetrics(), 5000);
+        });
+      }
+      
+      // 开始处理流
+      processStream();
+    }).catch(error => {
+      console.error('建立SSE连接错误:', error);
+      // 尝试重连
+      setTimeout(() => connectToMetrics(), 5000);
+    });
+    
+  } catch (error) {
+    console.error('创建监控连接错误:', error);
+  }
   
   // 页面卸载时关闭连接
   window.addEventListener('beforeunload', () => {
@@ -922,6 +996,13 @@ function formatBytes(bytes, decimals = 1) {
 function updateMetricsSubscriptions() {
   if (!sseConnection || !metricsConnectionId) return;
   
+  // 获取认证令牌
+  const token = localStorage.getItem('token');
+  if (!token) {
+    console.log('未登录，无法更新监控订阅');
+    return;
+  }
+  
   // 获取所有运行中的Spaces
   const runningSpaces = allSpaces.filter(space => space.status === 'running');
   const newSubscriptions = runningSpaces.map(space => space.repo_id);
@@ -938,7 +1019,8 @@ function updateMetricsSubscriptions() {
   fetch(`${API_BASE_URL}/api/proxy/update-subscriptions`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
     },
     body: JSON.stringify({
       clientId: metricsConnectionId,
