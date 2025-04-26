@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>HF Space Manager</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- 引入 Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <!-- 标题和主题切换 -->
+    <div class="overview">
+      <div class="overview-title">
+        <h1>HF Space Manager</h1>
+        <span class="version">v2.0</span>
+        
+        <div class="auth-controls">
+          <button id="login-btn" class="login-btn">登录</button>
+          <button id="logout-btn" class="logout-btn" style="display: none;">登出</button>
+        </div>
+      </div>
+      
+      <div class="theme-toggle">
+        主题：
+        <button id="theme-system" title="跟随系统">
+          <svg viewBox="0 0 24 24"><path d="M12 18a6 6 0 1 1 0-12 6 6 0 0 1 0 12zM11 1h2v3h-2V1zm0 19h2v3h-2v-3zM3.515 4.929l1.414-1.414L7.05 5.636 5.636 7.05 3.515 4.93zM16.95 18.364l1.414-1.414 2.121 2.121-1.414 1.414-2.121-2.121zm2.121-14.85l1.414 1.415-2.121 2.121-1.414-1.414 2.121-2.121zM5.636 16.95l1.414 1.414-2.121 2.121-1.414-1.414 2.121-2.121zM23 11v2h-3v-2h3zM4 11v2H1v-2h3z"/></svg>
+        </button>
+        <button id="theme-light" title="浅色模式">
+          <svg viewBox="0 0 24 24"><path d="M12 18a6 6 0 1 1 0-12 6 6 0 0 1 0 12zm0-2a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM11 1h2v3h-2V1zm0 19h2v3h-2v-3zM3.515 4.929l1.414-1.414L7.05 5.636 5.636 7.05 3.515 4.93zM16.95 18.364l1.414-1.414 2.121 2.121-1.414 1.414-2.121-2.121zm2.121-14.85l1.414 1.415-2.121 2.121-1.414-1.414 2.121-2.121zM5.636 16.95l1.414 1.414-2.121 2.121-1.414-1.414 2.121-2.121zM23 11v2h-3v-2h3zM4 11v2H1v-2h3z"/></svg>
+        </button>
+        <button id="theme-dark" title="深色模式">
+          <svg viewBox="0 0 24 24"><path d="M10 7a7 7 0 0 0 12 4.9v.1c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2h.1A6.979 6.979 0 0 0 10 7zm-6 5a8 8 0 0 0 15.062 3.762A9 9 0 0 1 8.238 4.938 7.999 7.999 0 0 0 4 12z"/></svg>
+        </button>
+      </div>
+      
+      <!-- 汇总数据 -->
+      <div id="summary">
+        <div>总数<span id="total-count">--</span></div>
+        <div>运行中<span id="running-count">--</span></div>
+        <div>已停止<span id="stopped-count">--</span></div>
+        <div>私有<span id="private-count">--</span></div>
+        <div class="filter-container">
+          <label>状态过滤</label>
+          <select id="status-filter">
+            <option value="all">全部</option>
+            <option value="running">运行中</option>
+            <option value="building">构建中</option>
+            <option value="stopped">已停止</option>
+            <option value="error">错误</option>
+          </select>
+        </div>
+        <div class="filter-container">
+          <label>用户过滤</label>
+          <select id="user-filter">
+            <option value="all">全部</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 服务器列表 -->
+    <div id="stats-container" class="stats-container">
+      <div class="loading-message">加载中...</div>
+    </div>
+  </div>
+  
+  <!-- 登录模态框 -->
+  <div id="login-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>登录</h2>
+        <span class="close">&times;</span>
+      </div>
+      <div class="modal-body">
+        <div id="login-error" class="login-error"></div>
+        <div class="input-group">
+          <label for="username">用户名</label>
+          <input type="text" id="username" placeholder="请输入用户名">
+        </div>
+        <div class="input-group">
+          <label for="password">密码</label>
+          <input type="password" id="password" placeholder="请输入密码">
+        </div>
+        <button id="login-submit" class="login-submit">登录</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 确认模态框 -->
+  <div id="confirm-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>确认操作</h2>
+        <span class="close">&times;</span>
+      </div>
+      <div class="modal-body">
+        <p id="confirm-message"></p>
+        <div class="modal-actions">
+          <button id="confirm-cancel" class="cancel-btn">取消</button>
+          <button id="confirm-ok" class="confirm-btn">确认</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script src="scripts.js"></script>
+</body>
+</html> 
