@@ -110,17 +110,88 @@ export async function onRequest(context) {
         const globalUsername = context.env.HF_USERNAME || '';
         if (globalUsername) {
           console.log(`使用全局令牌和用户名 ${globalUsername} 获取Spaces`);
-          const spaces = await fetchSpacesWithToken(globalApiToken, globalUsername);
-          if (spaces) {
+          // 使用fetchUserSpaces，它会自动获取每个space的详细信息
+          const spaces = await fetchUserSpaces(globalUsername, globalApiToken);
+          if (spaces && spaces.length > 0) {
             allSpaces = spaces;
-            console.log('使用全局令牌成功获取Spaces');
+            console.log(`使用全局令牌成功获取Spaces，总共 ${spaces.length} 个`);
+          } else {
+            console.warn(`使用全局令牌未获取到任何spaces，可能是配置问题或API限制`);
           }
         } else {
-          console.log('警告: 使用全局令牌但未指定HF_USERNAME，将获取所有公开Spaces');
-          const spaces = await fetchSpacesWithToken(globalApiToken, '');
-          if (spaces) {
-            allSpaces = spaces;
-            console.log('使用全局令牌成功获取Spaces（未指定用户）');
+          console.log('警告: 使用全局令牌但未指定HF_USERNAME，将尝试获取所有公开Spaces');
+          const basicSpaces = await fetchSpacesWithToken(globalApiToken, '');
+          
+          if (basicSpaces && basicSpaces.length > 0) {
+            console.log(`获取到 ${basicSpaces.length} 个基本spaces，开始获取详细信息`);
+            
+            // 为每个space获取详细信息
+            const enrichedSpaces = [];
+            
+            // 限制处理数量，避免API请求过多导致限流
+            const maxSpacesToProcess = Math.min(basicSpaces.length, 50); // 最多处理50个
+            console.log(`将处理前 ${maxSpacesToProcess} 个spaces的详细信息`);
+            
+            for (let i = 0; i < maxSpacesToProcess; i++) {
+              const space = basicSpaces[i];
+              try {
+                if (!space.id) {
+                  console.warn(`第 ${i+1} 个space缺少ID，跳过详细信息获取:`, space);
+                  continue;
+                }
+                
+                const spaceDetails = await fetchSpaceDetails(space.id, globalApiToken);
+                
+                if (spaceDetails) {
+                  // 提取运行时信息
+                  const spaceRuntime = spaceDetails.runtime || {};
+                  
+                  // 确定用户名
+                  const spaceUsername = spaceDetails.author || '';
+                  
+                  // 合并基本信息和详细信息
+                  const enrichedSpace = {
+                    repo_id: spaceDetails.id,
+                    name: spaceDetails.cardData?.title || spaceDetails.id.split('/')[1],
+                    owner: spaceDetails.author,
+                    username: spaceUsername,
+                    url: `https://${spaceDetails.author}-${spaceDetails.id.split('/')[1]}.hf.space`,
+                    status: spaceRuntime.stage || 'unknown',
+                    last_modified: spaceDetails.lastModified || 'unknown',
+                    created_at: spaceDetails.createdAt || 'unknown',
+                    sdk: spaceDetails.sdk || 'unknown',
+                    tags: spaceDetails.tags || [],
+                    private: spaceDetails.private || false,
+                    app_port: spaceDetails.cardData?.app_port || 'unknown'
+                  };
+                  
+                  enrichedSpaces.push(enrichedSpace);
+                } else {
+                  // 使用基本信息作为后备
+                  const author = space.author || (space.id ? space.id.split('/')[0] : '');
+                  const fallbackSpace = {
+                    repo_id: space.id,
+                    name: space.title || (space.id ? space.id.split('/')[1] : ''),
+                    owner: author,
+                    username: author,
+                    status: 'unknown',
+                    url: space.id ? `https://huggingface.co/spaces/${space.id}` : '',
+                    last_modified: space.lastModified || space.updatedAt || space.updated_at || new Date().toISOString()
+                  };
+                  
+                  enrichedSpaces.push(fallbackSpace);
+                }
+              } catch (error) {
+                console.error(`处理space ${space.id} 详细信息时出错:`, error);
+              }
+            }
+            
+            if (enrichedSpaces.length > 0) {
+              allSpaces = enrichedSpaces;
+              console.log(`成功获取 ${enrichedSpaces.length} 个spaces的详细信息`);
+            }
+          } else {
+            console.warn('未获取到任何基本spaces信息');
           }
         }
       } catch (error) {
@@ -141,12 +212,32 @@ export async function onRequest(context) {
       });
     }
     
+    // 按名称排序Spaces（与原版保持一致）
+    allSpaces.sort((a, b) => {
+      // 先按用户名排序
+      const usernameA = a.username || '';
+      const usernameB = b.username || '';
+      const usernameCompare = usernameA.localeCompare(usernameB);
+      
+      // 如果用户名相同，则按名称排序
+      if (usernameCompare === 0) {
+        const nameA = a.name || '';
+        const nameB = b.name || '';
+        return nameA.localeCompare(nameB);
+      }
+      
+      return usernameCompare;
+    });
+    
+    console.log('Spaces按名称排序完成');
+    
     // 显示获取到的前3个Space的ID和名称（如果有）
     if (allSpaces.length > 0) {
       const sampleSpaces = allSpaces.slice(0, 3).map(space => ({
-        id: space.id,
+        id: space.repo_id,
         name: space.name,
-        username: space.username
+        username: space.username,
+        status: space.status
       }));
       console.log('样本Space数据:', JSON.stringify(sampleSpaces));
     }
@@ -186,7 +277,9 @@ export async function onRequest(context) {
         // 前端使用repo_id，但API返回的是id
         repo_id: space.repo_id || space.id || '',
         // 前端使用last_modified，但API可能返回的是updatedAt或其他
-        last_modified: space.last_modified || space.updatedAt || space.updated_at || new Date().toISOString()
+        last_modified: space.last_modified || space.updatedAt || space.updated_at || new Date().toISOString(),
+        // 确保状态字段存在并且格式正确
+        status: space.status || 'unknown'
       };
     });
     
@@ -350,47 +443,158 @@ async function fetchUserSpaces(username, token) {
       return spaceOwner === username || spaceId.startsWith(`${username}/`);
     });
     
-    console.log(`用户 ${username} 有 ${userSpaces.length} 个Spaces`);
+    console.log(`用户 ${username} 有 ${userSpaces.length} 个Spaces，准备获取详细信息`);
     
-    // 如果用户有Spaces，记录第一个Space的ID供参考
-    if (userSpaces.length > 0) {
-      console.log(`用户 ${username} 的第一个Space ID:`, userSpaces[0].id);
-      
-      // 记录第一个Space的关键字段值，帮助调试
-      const firstSpace = userSpaces[0];
+    // 获取每个Space的详细信息
+    const enrichedSpaces = [];
+    for (const space of userSpaces) {
+      try {
+        // 获取当前Space的ID
+        const spaceId = space.id;
+        if (!spaceId) {
+          console.warn(`Space缺少ID，跳过详细信息获取:`, space);
+          continue;
+        }
+        
+        // 获取详细信息
+        const spaceDetails = await fetchSpaceDetails(spaceId, token);
+        
+        if (spaceDetails) {
+          // 提取运行时信息
+          const spaceRuntime = spaceDetails.runtime || {};
+          
+          // 合并基本信息和详细信息
+          const enrichedSpace = {
+            repo_id: spaceDetails.id,
+            name: spaceDetails.cardData?.title || spaceDetails.id.split('/')[1],
+            owner: spaceDetails.author,
+            username: username,
+            url: `https://${spaceDetails.author}-${spaceDetails.id.split('/')[1]}.hf.space`,
+            status: spaceRuntime.stage || 'unknown',
+            last_modified: spaceDetails.lastModified || 'unknown',
+            created_at: spaceDetails.createdAt || 'unknown',
+            sdk: spaceDetails.sdk || 'unknown',
+            tags: spaceDetails.tags || [],
+            private: spaceDetails.private || false,
+            app_port: spaceDetails.cardData?.app_port || 'unknown'
+          };
+          
+          enrichedSpaces.push(enrichedSpace);
+          console.log(`成功添加详细信息 (${spaceId}), 状态: ${enrichedSpace.status}`);
+        } else {
+          // 如果无法获取详细信息，使用基本信息
+          console.warn(`无法获取详细信息 (${spaceId}), 使用基本信息`);
+          
+          // 保留原始字段，但添加或规范化必要的字段
+          const fallbackSpace = {
+            ...space,
+            // 确保username字段存在，用于后续过滤
+            username: username,
+            // 确保repo_id字段存在（API可能返回的是id）
+            repo_id: space.repo_id || space.id || '',
+            // 确保name字段存在
+            name: space.name || space.title || (space.id ? space.id.split('/')[1] : '') || '',
+            // 确保owner/author字段一致
+            owner: space.owner || space.author || username,
+            // 确保status字段存在
+            status: space.status || 'unknown',
+            // 确保last_modified字段存在
+            last_modified: space.last_modified || space.updatedAt || space.updated_at || new Date().toISOString(),
+            // 标准化URL
+            url: space.url || (space.id ? `https://huggingface.co/spaces/${space.id}` : '')
+          };
+          
+          enrichedSpaces.push(fallbackSpace);
+        }
+      } catch (error) {
+        console.error(`处理Space详细信息时出错:`, error);
+        // 使用基本信息作为后备
+        const fallbackSpace = {
+          ...space,
+          username: username,
+          repo_id: space.repo_id || space.id || '',
+          name: space.name || space.title || (space.id ? space.id.split('/')[1] : '') || '',
+          owner: space.owner || space.author || username,
+          status: 'unknown',
+          last_modified: space.last_modified || space.updatedAt || space.updated_at || new Date().toISOString(),
+          url: space.url || (space.id ? `https://huggingface.co/spaces/${space.id}` : '')
+        };
+        
+        enrichedSpaces.push(fallbackSpace);
+      }
+    }
+    
+    console.log(`用户 ${username} 的Spaces详细信息获取完成，成功获取 ${enrichedSpaces.length} 个`);
+    
+    // 如果用户有Spaces，记录第一个Space的关键字段值
+    if (enrichedSpaces.length > 0) {
+      const firstSpace = enrichedSpaces[0];
       console.log(`用户 ${username} 的第一个Space关键字段:`, {
-        id: firstSpace.id,
-        author: firstSpace.author || firstSpace.owner,
-        name: firstSpace.name || firstSpace.title,
-        status: firstSpace.status || (firstSpace.runtime && firstSpace.runtime.stage) || 'unknown'
+        id: firstSpace.repo_id,
+        name: firstSpace.name,
+        status: firstSpace.status
       });
     } else {
       console.log(`用户 ${username} 没有Spaces或没有获取到`);
     }
     
-    // 为每个space添加或规范化关键字段
-    return userSpaces.map(space => {
-      // 保留原始字段，但添加或规范化必要的字段
-      const processed = {
-        ...space,
-        // 确保username字段存在，用于后续过滤
-        username: username,
-        // 确保repo_id字段存在（API可能返回的是id）
-        repo_id: space.repo_id || space.id || '',
-        // 确保name字段存在
-        name: space.name || space.title || (space.id ? space.id.split('/')[1] : '') || '',
-        // 确保owner/author字段一致
-        owner: space.owner || space.author || username,
-        // 确保last_modified字段存在
-        last_modified: space.last_modified || space.updatedAt || space.updated_at || new Date().toISOString(),
-        // 标准化URL
-        url: space.url || (space.id ? `https://huggingface.co/spaces/${space.id}` : '')
-      };
-      
-      return processed;
-    });
+    return enrichedSpaces;
   } catch (error) {
     console.error(`获取用户 ${username} 的Spaces失败:`, error);
+    return null;
+  }
+}
+
+// 获取Space详细信息
+async function fetchSpaceDetails(spaceId, token) {
+  try {
+    console.log(`开始获取Space详细信息: ${spaceId}`);
+    
+    // 构建请求URL
+    const url = `https://huggingface.co/api/spaces/${spaceId}`;
+    console.log('请求详细信息URL:', url);
+    
+    // 发送请求
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json'
+      }
+    });
+    
+    console.log(`Space详细信息API响应状态 (${spaceId}):`, response.status, response.statusText);
+    
+    if (!response.ok) {
+      console.error(`获取Space详细信息失败 (${spaceId}), 状态码:`, response.status);
+      return null;
+    }
+    
+    // 获取响应文本
+    const responseText = await response.text();
+    
+    // 如果响应为空，返回null
+    if (!responseText.trim()) {
+      console.warn(`Space详细信息响应为空 (${spaceId})`);
+      return null;
+    }
+    
+    // 解析响应
+    try {
+      const data = JSON.parse(responseText);
+      console.log(`成功获取Space详细信息 (${spaceId})`);
+      
+      // 记录关键字段
+      const runtimeStage = data.runtime?.stage || 'unknown';
+      console.log(`Space ${spaceId} 状态:`, runtimeStage);
+      
+      return data;
+    } catch (parseError) {
+      console.error(`解析Space详细信息响应失败 (${spaceId}):`, parseError);
+      console.log(`详细信息原始响应 (前200字符):`, responseText.substring(0, 200));
+      return null;
+    }
+  } catch (error) {
+    console.error(`获取Space详细信息时发生错误 (${spaceId}):`, error);
     return null;
   }
 } 
