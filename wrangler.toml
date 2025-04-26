@@ -4,27 +4,14 @@ compatibility_date = "2023-04-20"
 # Pages配置
 pages_build_output_dir = "public"
 
-# KV 命名空间配置
-# 请按照以下步骤设置KV命名空间:
-# 1. 使用命令 `wrangler kv:namespace create SESSIONS` 创建命名空间
-# 2. 从命令输出中复制生成的id和preview_id
-# 3. 替换下面的 "your-kv-id-for-sessions" 和 "your-preview-kv-id-for-sessions"
-kv_namespaces = [
-  { binding = "SESSIONS", id = "your-kv-id-for-sessions", preview_id = "your-preview-kv-id-for-sessions" }
-]
-
-# 环境变量配置
-[vars]
-APP_VERSION = "1.0.0"
-
 # 开发模式
 [dev]
 port = 8788
 
-# 路由配置
-[routes]
-pattern = "/api/*"
-script = "functions/api"
+# 路由配置，使用数组格式
+routes = [
+  { pattern = "/api/*", script = "functions/api" }
+]
 
 # 环境配置
 # 注意: 以下环境变量必须在Cloudflare Pages控制台中设置:
@@ -35,11 +22,37 @@ script = "functions/api"
 # - HF_USERNAMES: (可选) 以逗号分隔的用户名列表，用于过滤Spaces，若设置了HF_USER则可以省略
 # - API_KEY: (可选) 外部API访问密钥，用于第三方应用通过API调用访问和管理Spaces
 
+# 生产环境配置
 [env.production]
-# 生产环境特定配置
+# KV 命名空间配置
+# 请按照以下步骤设置KV命名空间:
+# 1. 使用命令 `wrangler kv:namespace create SESSIONS` 创建命名空间
+# 2. 从命令输出中复制生成的id和preview_id
+# 3. 替换下面的 "your-kv-id-for-sessions" 和 "your-preview-kv-id-for-sessions"
+kv_namespaces = [
+  { binding = "SESSIONS", id = "your-kv-id-for-sessions", preview_id = "your-preview-kv-id-for-sessions" }
+]
 
+# 环境变量配置
+[env.production.vars]
+APP_VERSION = "1.0.0"
+
+# 测试环境配置
 [env.staging]
 # 测试环境特定配置
+kv_namespaces = [
+  { binding = "SESSIONS", id = "your-kv-id-for-sessions", preview_id = "your-preview-kv-id-for-sessions" }
+]
 
+[env.staging.vars]
+APP_VERSION = "1.0.0"
+
+# 开发环境配置
 [env.development]
-# 开发环境特定配置 
+# 开发环境特定配置
+kv_namespaces = [
+  { binding = "SESSIONS", id = "your-kv-id-for-sessions", preview_id = "your-preview-kv-id-for-sessions" }
+]
+
+[env.development.vars]
+APP_VERSION = "1.0.0" 
