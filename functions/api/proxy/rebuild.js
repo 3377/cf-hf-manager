@@ -157,20 +157,32 @@ export async function onRequest(context) {
     }
     
     // 调用Hugging Face API重建Space
-    const response = await fetch(`https://huggingface.co/api/spaces/${spaceId}/build`, {
+    console.log(`开始重建Space: ${spaceId}，使用API: https://huggingface.co/api/spaces/${spaceId}/restart?factory=true`);
+    
+    // 修改: 使用正确的API端点，带有factory=true参数，明确指定这是一个factory rebuild
+    const response = await fetch(`https://huggingface.co/api/spaces/${spaceId}/restart?factory=true`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiToken}`,
         'Content-Type': 'application/json'
-      }
+      },
+      // 确保请求体是有效的JSON，即使是空对象
+      body: JSON.stringify({}),
+      // 设置超时，防止长时间等待
+      signal: AbortSignal.timeout(30000) // 30秒超时
     });
+    
+    // 记录响应状态码
+    console.log(`Space重建请求响应状态: ${response.status}`);
     
     if (!response.ok) {
       const error = await response.text();
+      console.error(`重建Space失败 (${spaceId}): 状态码 ${response.status}, 响应: ${error}`);
       throw new Error(`重建Space失败: ${response.status} - ${error}`);
     }
     
     const result = await response.json();
+    console.log(`Space重建请求成功发送 (${spaceId}), 响应:`, result);
     
     return new Response(JSON.stringify({
       success: true,
@@ -182,7 +194,19 @@ export async function onRequest(context) {
     });
     
   } catch (error) {
+    // 增强错误日志
     console.error('重建Space错误:', error);
+    
+    // 检查是否是超时错误
+    if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+      return new Response(JSON.stringify({
+        error: '重建Space请求超时，请稍后重试'
+      }), {
+        status: 504, // Gateway Timeout
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
     return new Response(JSON.stringify({
       error: '重建Space失败: ' + error.message
     }), {
