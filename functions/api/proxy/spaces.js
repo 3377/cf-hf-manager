@@ -13,18 +13,40 @@ export async function onRequest(context) {
     
     console.log('HF_USER配置是否存在:', !!hfUserConfig);
     if (hfUserConfig) {
-      // 不记录完整配置，但记录是否符合预期格式
+      // 检查格式是否正确（必须包含冒号分隔用户名和令牌）
       const hasCorrectFormat = hfUserConfig.includes(':');
       console.log('HF_USER格式是否正确 (包含":"):', hasCorrectFormat);
       
-      hfUserConfig.split(',').forEach(pair => {
+      if (!hasCorrectFormat) {
+        console.error('HF_USER格式错误: 必须使用 "username:token" 格式');
+        return new Response(JSON.stringify({
+          error: 'HF_USER格式错误，请使用 "username:token" 格式。例如："username1:token1,username2:token2"'
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // 拆分并解析用户-令牌对
+      const pairs = hfUserConfig.split(',');
+      console.log(`HF_USER包含 ${pairs.length} 个用户配置`);
+      
+      pairs.forEach((pair, index) => {
         const parts = pair.split(':').map(part => part.trim());
         const username = parts[0];
         const token = parts[1] || '';
+        
+        if (!username) {
+          console.warn(`第 ${index + 1} 个配置缺少用户名`);
+        } else if (!token) {
+          console.warn(`用户 "${username}" 缺少令牌`);
+        }
+        
         if (username) {
           usernames.push(username);
           if (token) {
             userTokenMapping[username] = token;
+            console.log(`成功配置用户 "${username}" 的令牌`);
           }
         }
       });
@@ -41,7 +63,7 @@ export async function onRequest(context) {
     if (Object.keys(userTokenMapping).length === 0 && !globalApiToken) {
       console.log('错误: 未配置任何API令牌');
       return new Response(JSON.stringify({
-        error: 'API令牌未配置，请设置HF_USER或HF_API_TOKEN环境变量'
+        error: 'API令牌未配置，请设置HF_USER或HF_API_TOKEN环境变量。HF_USER应使用 "username:token" 格式。'
       }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' }
@@ -84,10 +106,22 @@ export async function onRequest(context) {
     if (allSpaces.length === 0 && globalApiToken) {
       console.log('使用全局令牌获取Spaces');
       try {
-        const spaces = await fetchSpacesWithToken(globalApiToken);
-        if (spaces) {
-          allSpaces = spaces;
-          console.log('使用全局令牌成功获取Spaces');
+        // 如果配置了HF_USERNAME，则使用它作为author参数
+        const globalUsername = context.env.HF_USERNAME || '';
+        if (globalUsername) {
+          console.log(`使用全局令牌和用户名 ${globalUsername} 获取Spaces`);
+          const spaces = await fetchSpacesWithToken(globalApiToken, globalUsername);
+          if (spaces) {
+            allSpaces = spaces;
+            console.log('使用全局令牌成功获取Spaces');
+          }
+        } else {
+          console.log('警告: 使用全局令牌但未指定HF_USERNAME，将获取所有公开Spaces');
+          const spaces = await fetchSpacesWithToken(globalApiToken, '');
+          if (spaces) {
+            allSpaces = spaces;
+            console.log('使用全局令牌成功获取Spaces（未指定用户）');
+          }
         }
       } catch (error) {
         console.error('使用全局令牌获取Spaces失败:', error);
@@ -95,6 +129,17 @@ export async function onRequest(context) {
     }
     
     console.log('获取到的Spaces数量:', allSpaces.length);
+    
+    // 如果所有获取方法都失败，则返回错误
+    if (allSpaces.length === 0) {
+      console.error('无法获取任何Spaces');
+      return new Response(JSON.stringify({
+        error: '无法获取任何Spaces。请检查API令牌和用户名配置是否正确，以及HuggingFace API是否可访问。'
+      }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
     
     // 显示获取到的前3个Space的ID和名称（如果有）
     if (allSpaces.length > 0) {
@@ -175,12 +220,16 @@ export async function onRequest(context) {
 }
 
 // 使用给定令牌获取Spaces列表
-async function fetchSpacesWithToken(token) {
+async function fetchSpacesWithToken(token, username) {
   try {
-    console.log('开始获取Spaces列表，使用令牌...');
+    console.log(`开始获取Spaces列表，使用令牌${username ? `和用户名 ${username}` : ''}...`);
     
     // 构建请求
-    const url = 'https://huggingface.co/api/spaces';
+    let url = 'https://huggingface.co/api/spaces';
+    // 如果提供了用户名，则添加author过滤参数
+    if (username) {
+      url = `${url}?author=${encodeURIComponent(username)}`;
+    }
     console.log('请求URL:', url);
     
     const headers = {
@@ -188,28 +237,72 @@ async function fetchSpacesWithToken(token) {
     };
     console.log('发送请求，使用令牌前3位和后3位:', headers.Authorization);
     
+    // 记录完整请求信息（不含敏感值）
+    console.log('请求方法:', 'GET');
+    console.log('请求头部字段:', Object.keys(headers));
+    
     const response = await fetch(url, {
       headers: {
-        'Authorization': `Bearer ${token}`
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json'
       }
     });
     
     console.log('API响应状态:', response.status, response.statusText);
+    console.log('API响应头部:', Object.fromEntries([...response.headers.entries()]));
     
     if (!response.ok) {
       console.error(`获取Spaces列表失败，状态码: ${response.status}`);
-      throw new Error(`获取Spaces列表失败: ${response.status}`);
+      
+      // 根据状态码提供更有针对性的错误信息
+      if (response.status === 404) {
+        console.error('API返回404错误，可能是URL格式错误或资源不存在');
+        // 尝试获取响应体以获取更多错误信息
+        try {
+          const errorText = await response.text();
+          console.error('404错误响应内容:', errorText);
+        } catch (e) {
+          console.error('无法读取错误响应:', e);
+        }
+      } else if (response.status === 401) {
+        console.error('API返回401错误，令牌可能无效或已过期');
+      } else if (response.status === 403) {
+        console.error('API返回403错误，令牌权限不足');
+      } else if (response.status >= 500) {
+        console.error('API返回服务器错误，HuggingFace服务可能存在问题');
+      }
+      
+      throw new Error(`获取Spaces列表失败: ${response.status} ${response.statusText}`);
     }
     
     // 获取响应文本
     const responseText = await response.text();
     console.log('API响应长度:', responseText.length, '字节');
     
+    // 如果响应为空，返回空数组
+    if (!responseText.trim()) {
+      console.warn('API响应为空，返回空数组');
+      return [];
+    }
+    
     // 尝试解析响应
     let data;
     try {
       data = JSON.parse(responseText);
+      
+      // 验证数据是否为数组
+      if (!Array.isArray(data)) {
+        console.error('API响应不是数组格式:', typeof data);
+        console.log('响应内容 (前200字符):', responseText.substring(0, 200));
+        throw new Error('API响应格式错误，预期为数组');
+      }
+      
       console.log(`成功解析API响应，获取到 ${data.length} 个Spaces对象`);
+      
+      // 如果有数据，记录第一个item的字段
+      if (data.length > 0) {
+        console.log('Space对象字段:', Object.keys(data[0]));
+      }
     } catch (parseError) {
       console.error('解析API响应失败:', parseError);
       console.log('原始响应内容 (前200字符):', responseText.substring(0, 200));
@@ -219,6 +312,14 @@ async function fetchSpacesWithToken(token) {
     return data;
   } catch (error) {
     console.error('获取Spaces列表时发生错误:', error);
+    
+    // 提供更详细的错误信息
+    if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      console.error('网络请求失败，可能是网络连接问题或CORS限制');
+    } else if (error.name === 'SyntaxError') {
+      console.error('JSON解析错误，响应不是有效的JSON格式');
+    }
+    
     throw error;
   }
 }
@@ -228,18 +329,66 @@ async function fetchUserSpaces(username, token) {
   try {
     console.log(`开始获取用户 ${username} 的Spaces...`);
     
-    const spaces = await fetchSpacesWithToken(token);
-    // 只返回属于指定用户的Spaces
-    const userSpaces = spaces.filter(space => space.username === username);
+    const spaces = await fetchSpacesWithToken(token, username);
+    // 修改：spaces已经是通过作者过滤的，不需要再次过滤，但为保险起见还是进行验证
+    const userSpaces = spaces.filter(space => {
+      // 检查space对象中的各种可能的用户标识字段
+      const spaceOwner = space.author || space.owner || '';
+      const spaceUsername = space.username || '';
+      const spaceId = space.id || '';
+      
+      // 记录不匹配的空间
+      if (spaceOwner !== username && !spaceId.startsWith(`${username}/`)) {
+        console.warn(`发现不属于用户 ${username} 的空间:`, {
+          id: spaceId,
+          author: spaceOwner,
+          username: spaceUsername
+        });
+      }
+      
+      // 通过ID或author/owner字段匹配
+      return spaceOwner === username || spaceId.startsWith(`${username}/`);
+    });
     
     console.log(`用户 ${username} 有 ${userSpaces.length} 个Spaces`);
     
     // 如果用户有Spaces，记录第一个Space的ID供参考
     if (userSpaces.length > 0) {
       console.log(`用户 ${username} 的第一个Space ID:`, userSpaces[0].id);
+      
+      // 记录第一个Space的关键字段值，帮助调试
+      const firstSpace = userSpaces[0];
+      console.log(`用户 ${username} 的第一个Space关键字段:`, {
+        id: firstSpace.id,
+        author: firstSpace.author || firstSpace.owner,
+        name: firstSpace.name || firstSpace.title,
+        status: firstSpace.status || (firstSpace.runtime && firstSpace.runtime.stage) || 'unknown'
+      });
+    } else {
+      console.log(`用户 ${username} 没有Spaces或没有获取到`);
     }
     
-    return userSpaces;
+    // 为每个space添加或规范化关键字段
+    return userSpaces.map(space => {
+      // 保留原始字段，但添加或规范化必要的字段
+      const processed = {
+        ...space,
+        // 确保username字段存在，用于后续过滤
+        username: username,
+        // 确保repo_id字段存在（API可能返回的是id）
+        repo_id: space.repo_id || space.id || '',
+        // 确保name字段存在
+        name: space.name || space.title || (space.id ? space.id.split('/')[1] : '') || '',
+        // 确保owner/author字段一致
+        owner: space.owner || space.author || username,
+        // 确保last_modified字段存在
+        last_modified: space.last_modified || space.updatedAt || space.updated_at || new Date().toISOString(),
+        // 标准化URL
+        url: space.url || (space.id ? `https://huggingface.co/spaces/${space.id}` : '')
+      };
+      
+      return processed;
+    });
   } catch (error) {
     console.error(`获取用户 ${username} 的Spaces失败:`, error);
     return null;
