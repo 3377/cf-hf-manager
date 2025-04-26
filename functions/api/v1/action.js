@@ -129,13 +129,24 @@ export async function onRequest(context) {
         });
     }
     
+    // 构建增强的API请求头
+    const apiHeaders = {
+      'Authorization': `Bearer ${apiToken}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, text/plain, */*',
+      'User-Agent': 'HF-Space-Manager/2.0 (Compatible; Hugging Face API Client)',
+      'X-Requested-With': 'XMLHttpRequest',
+      'Origin': 'https://huggingface.co',
+      'Referer': `https://huggingface.co/spaces/${spaceId}`,
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache'
+    };
+    
     // 调用Hugging Face API
     const response = await fetch(endpoint, {
       method,
-      headers: {
-        'Authorization': `Bearer ${apiToken}`,
-        'Content-Type': 'application/json'
-      }
+      headers: apiHeaders,
+      body: JSON.stringify({})
     });
     
     if (!response.ok) {

@@ -160,15 +160,23 @@ export async function onRequest(context) {
     console.log(`开始重启Space: ${spaceId}，使用标准API: https://huggingface.co/api/spaces/${spaceId}/restart`);
     
     try {
+      // 构建API调用的请求头
+      const apiHeaders = {
+        'Authorization': `Bearer ${apiToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/plain, */*',
+        'User-Agent': 'HF-Space-Manager/2.0 (Compatible; Hugging Face API Client)',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Origin': 'https://huggingface.co',
+        'Referer': `https://huggingface.co/spaces/${spaceId}`,
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
+      };
+      
       // 使用内置的 fetch 方法，添加必要的头部
       const response = await fetch(`https://huggingface.co/api/spaces/${spaceId}/restart`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiToken}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'User-Agent': 'HF-Space-Manager/2.0'
-        },
+        headers: apiHeaders,
         // 确保请求体有效，即使是空对象
         body: JSON.stringify({}),
         // 设置超时保护

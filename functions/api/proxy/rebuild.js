@@ -169,6 +169,19 @@ export async function onRequest(context) {
     let lastError = null;
     let successResponse = null;
     
+    // 构建增强的API请求头
+    const createApiHeaders = () => ({
+      'Authorization': `Bearer ${apiToken}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, text/plain, */*',
+      'User-Agent': 'HF-Space-Manager/2.0 (Compatible; Hugging Face API Client)',
+      'X-Requested-With': 'XMLHttpRequest',
+      'Origin': 'https://huggingface.co',
+      'Referer': `https://huggingface.co/spaces/${spaceId}`,
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache'
+    });
+    
     // 依次尝试每个API端点
     for (const endpoint of apiEndpoints) {
       try {
@@ -176,12 +189,7 @@ export async function onRequest(context) {
         
         const response = await fetch(endpoint.url, {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiToken}`,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'User-Agent': 'HF-Space-Manager/2.0'
-          },
+          headers: createApiHeaders(),
           body: JSON.stringify({}),
           signal: AbortSignal.timeout(30000) // 30秒超时
         });
