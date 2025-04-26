@@ -157,65 +157,86 @@ export async function onRequest(context) {
     }
     
     // 调用Hugging Face API重启Space
-    console.log(`开始重启Space: ${spaceId}，使用标准API: https://huggingface.co/api/spaces/${spaceId}/restart`);
+    console.log(`开始重启Space: ${spaceId}，尝试多种可能的API端点`);
     
-    try {
-      // 构建API调用的请求头
-      const apiHeaders = {
-        'Authorization': `Bearer ${apiToken}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/plain, */*',
-        'User-Agent': 'HF-Space-Manager/2.0 (Compatible; Hugging Face API Client)',
-        'X-Requested-With': 'XMLHttpRequest',
-        'Origin': 'https://huggingface.co',
-        'Referer': `https://huggingface.co/spaces/${spaceId}`,
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache'
-      };
-      
-      // 使用内置的 fetch 方法，添加必要的头部
-      const response = await fetch(`https://huggingface.co/api/spaces/${spaceId}/restart`, {
-        method: 'POST',
-        headers: apiHeaders,
-        // 确保请求体有效，即使是空对象
-        body: JSON.stringify({}),
-        // 设置超时保护
-        signal: AbortSignal.timeout(30000) // 30秒超时
-      });
-      
-      // 记录响应状态码以进行调试
-      console.log(`Space重启请求响应状态: ${response.status}`);
-      
-      // 如果响应不成功，抛出错误
-      if (!response.ok) {
-        const error = await response.text();
-        console.error(`重启Space失败 (${spaceId}): 状态码 ${response.status}, 响应: ${error}`);
-        throw new Error(`重启Space失败: ${response.status} - ${error}`);
-      }
-      
-      // 解析结果
-      let result;
+    // 按优先级尝试多个端点，直到成功
+    const apiEndpoints = [
+      { url: `https://huggingface.co/api/spaces/${spaceId}/restart`, desc: "restart" },
+      { url: `https://huggingface.co/api/spaces/${spaceId}/runtime`, desc: "runtime" },
+      { url: `https://huggingface.co/api/spaces/${spaceId}/restart?soft=true`, desc: "restart?soft=true" }
+    ];
+    
+    let lastError = null;
+    let successResponse = null;
+    
+    // 构建增强的API请求头
+    const createApiHeaders = () => ({
+      'Authorization': `Bearer ${apiToken}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, text/plain, */*',
+      'User-Agent': 'HF-Space-Manager/2.0 (Compatible; Hugging Face API Client)',
+      'X-Requested-With': 'XMLHttpRequest',
+      'Origin': 'https://huggingface.co',
+      'Referer': `https://huggingface.co/spaces/${spaceId}`,
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache'
+    });
+    
+    // 依次尝试每个API端点
+    for (const endpoint of apiEndpoints) {
       try {
-        result = await response.json();
-      } catch (jsonError) {
-        console.warn(`无法解析JSON响应: ${jsonError.message}, 原始响应: ${await response.text()}`);
-        // 如果响应成功但非JSON，则创建默认响应
-        result = { status: 'success', message: '操作成功，但服务器未返回详细信息' };
+        console.log(`尝试使用API端点: ${endpoint.desc}`);
+        
+        const response = await fetch(endpoint.url, {
+          method: 'POST',
+          headers: createApiHeaders(),
+          body: JSON.stringify({}),
+          signal: AbortSignal.timeout(30000) // 30秒超时
+        });
+        
+        console.log(`${endpoint.desc} 响应状态: ${response.status}`);
+        
+        if (response.ok) {
+          // 找到成功的端点
+          let result;
+          try {
+            result = await response.json();
+          } catch (jsonError) {
+            console.warn(`无法解析JSON响应: ${jsonError.message}`);
+            result = { status: 'success', message: '操作成功，但服务器未返回详细信息' };
+          }
+          
+          console.log(`使用 ${endpoint.desc} 重启请求成功`);
+          successResponse = {
+            success: true,
+            message: `Space重启请求已通过 ${endpoint.desc} 发送`,
+            data: result
+          };
+          break; // 成功后跳出循环
+        } else {
+          const error = await response.text();
+          console.error(`${endpoint.desc} 失败: 状态码 ${response.status}, 响应: ${error}`);
+          lastError = new Error(`${endpoint.desc} 失败: ${response.status} - ${error}`);
+        }
+      } catch (fetchError) {
+        console.error(`${endpoint.desc} 请求错误:`, fetchError);
+        lastError = fetchError;
       }
-      
-      console.log(`Space重启请求成功发送 (${spaceId}), 响应:`, result);
-      
-      return new Response(JSON.stringify({
-        success: true,
-        message: 'Space重启请求已发送',
-        data: result
-      }), {
+    }
+    
+    // 如果有成功的响应，返回它
+    if (successResponse) {
+      return new Response(JSON.stringify(successResponse), {
         status: 200,
         headers: { 'Content-Type': 'application/json' }
       });
-    } catch (fetchError) {
-      console.error(`重启Space API请求失败 (${spaceId}):`, fetchError);
-      throw fetchError; // 重新抛出，让外层捕获
+    }
+    
+    // 如果所有尝试都失败，抛出最后一个错误
+    if (lastError) {
+      throw lastError;
+    } else {
+      throw new Error('所有API端点均请求失败');
     }
     
   } catch (error) {
